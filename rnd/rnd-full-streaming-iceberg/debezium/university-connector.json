@@ -10,7 +10,7 @@
     "database.dbname": "sourcedb",
     "database.server.name": "university-server",
     "schema.include.list": "public",
-    "table.include.list": "public.faculty,public.program,public.lecturer,public.students,public.room,public.course,public.semester,public.class_schedule,public.registration,public.enrollment,public.grade,public.attendance,public.semester_fee,public.payment",
+    "table.include.list": "public.faculty,public.program,public.lecturer,public.students,public.student_detail,public.student_fee,public.room,public.course,public.registration,public.class,public.student_enrollment,public.payment",
     "plugin.name": "pgoutput",
     "slot.name": "university_slot",
     "publication.name": "university_publication",

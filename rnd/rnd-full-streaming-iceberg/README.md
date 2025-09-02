@@ -1,252 +1,329 @@
-# PostgreSQL to Iceberg CDC Pipeline
+# Streaming Data Lakehouse Setup Guide
 
-This project sets up a complete Change Data Capture (CDC) pipeline that automatically streams data changes from PostgreSQL to Apache Iceberg tables through Kafka and Apache Flink.
+## Architecture Overview
 
-## Architecture
-
+This setup creates a real-time streaming data lakehouse with the following flow:
 ```
-PostgreSQL → Debezium (CDC) → Kafka → Flink → Iceberg → Trino (Query Engine)
+PostgreSQL → Debezium → Kafka → Flink → Iceberg → MinIO (Storage)
+                                          ↓
+                                       Trino (Query Engine)
 ```
 
 ## Components
 
-- **PostgreSQL 15**: Source database with logical replication enabled
-- **Debezium Connect**: CDC connector for PostgreSQL
-- **Apache Kafka**: Message streaming platform
-- **Apache Flink**: Stream processing for Kafka to Iceberg
-- **Apache Polaris**: Iceberg REST catalog
-- **MinIO**: S3-compatible object storage for Iceberg data
-- **Trino**: SQL query engine for Iceberg
+- **PostgreSQL**: Source database with WAL enabled for CDC
+- **Debezium**: Change Data Capture connector
+- **Kafka**: Streaming message broker  
+- **Flink**: Stream processing engine
+- **Polaris**: Iceberg catalog service
+- **MinIO**: S3-compatible object storage
+- **Trino**: Query engine for analytics
 
-## Quick Start
+## Prerequisites
 
-### 1. Start the Environment
+- Docker and Docker Compose
+- Basic understanding of SQL and streaming concepts
+
+## Step-by-Step Manual Setup
+
+### Step 1: Start All Services
 
 ```bash
+cd rnd/rnd-full-streaming-iceberg
 docker-compose up -d
 ```
 
-This will start all services. Wait for all containers to be healthy (about 2-3 minutes).
+Wait for all services to start (approximately 2-3 minutes).
 
-### 2. Initialize PostgreSQL Data
+### Step 2: Verify All Services Are Running
 
-The sample tables and data are automatically created via the initialization script in `init-scripts/init-postgres.sql`.
-
-### 3. Set up Debezium Connector
-
-Register the PostgreSQL connector with Debezium:
+Check that all containers are healthy:
 
 ```bash
-curl -X POST http://localhost:8083/connectors \
-  -H "Content-Type: application/json" \
-  -d @debezium/postgres-connector.json
+docker-compose ps
 ```
 
-Check if the connector is running:
+All services should show "Up" status. Key ports to verify:
+- PostgreSQL: 5433
+- Kafka: 9092  
+- Debezium Connect: 8083
+- Flink JobManager: 8081
+- Polaris: 8181
+- MinIO: 9000, 9001
+- Trino: 8080
+
+### Step 3: Verify Individual Service Health
+
+#### 3.1 PostgreSQL Connection Test
+```bash
+docker exec -it $(docker-compose ps -q postgres) psql -U postgres -d sourcedb -c "\dt"
+```
+Should show university tables.
+
+#### 3.2 Kafka Broker Test
+```bash
+docker exec -it $(docker-compose ps -q kafka-broker) kafka-topics.sh --bootstrap-server localhost:29092 --list
+```
+
+#### 3.3 Debezium Connect Test
+```bash
+curl -H "Accept:application/json" localhost:8083/
+curl -H "Accept:application/json" localhost:8083/connectors/
+```
+
+#### 3.4 Flink JobManager Test  
+```bash
+curl -s http://localhost:8081/overview
+```
+
+#### 3.5 Polaris Catalog Test
+```bash
+curl -s http://localhost:8181/api/management/v1/catalogs
+```
+
+#### 3.6 MinIO Console Access
+Open browser: http://localhost:9001
+- Username: admin
+- Password: password
+
+#### 3.7 Trino Query Interface Test
+```bash
+docker exec -it $(docker-compose ps -q trino) trino --server localhost:8080 --catalog iceberg --schema information_schema --execute "SELECT 1"
+```
+
+### Step 4: Verify CDC is Working
+
+#### 4.1 Check Debezium Connector Status
+```bash
+curl -s http://localhost:8083/connectors/university-connector/status | jq
+```
+
+Should show `"state": "RUNNING"`.
+
+#### 4.2 Monitor Kafka Topics
+```bash
+# List all topics (should include university tables)
+docker exec -it $(docker-compose ps -q kafka-broker) kafka-topics.sh --bootstrap-server localhost:29092 --list
+
+# Check messages in a specific topic
+docker exec -it $(docker-compose ps -q kafka-broker) kafka-console-consumer.sh --bootstrap-server localhost:29092 --topic university-server.public.faculty --from-beginning --max-messages 5
+```
+
+### Step 5: Connect to Flink SQL Client
 
 ```bash
-curl http://localhost:8083/connectors/postgres-connector/status
+docker-compose exec flink-sql-client /opt/flink/bin/sql-client.sh
 ```
 
-### 4. Set up Flink CDC Pipeline
+### Step 6: Setup Iceberg Catalog in Flink
 
-Access the Flink SQL Client:
-
-```bash
-docker exec -it $(docker ps -q -f name=flink-sql-client) sql-client.sh
-```
-
-Execute the CDC pipeline setup:
+In the Flink SQL client, run:
 
 ```sql
--- Load and execute the setup script
--- Copy the contents of flink-sql/setup-cdc-pipeline.sql
--- and paste them in the Flink SQL client
+-- Execute the catalog setup
+\i /opt/flink/sql/setup-catalog-only.sql
 ```
 
-### 5. Query Data with Trino
-
-Access Trino CLI:
-
-```bash
-docker exec -it $(docker ps -q -f name=trino) trino
-```
-
-Query the Iceberg tables:
-
+Verify the setup:
 ```sql
--- List catalogs
 SHOW CATALOGS;
+USE CATALOG iceberg_catalog;
+SHOW DATABASES;
+```
 
--- Use iceberg catalog
-USE iceberg.inventory;
+### Step 7: Run Individual Streaming Jobs
 
--- List tables
+#### 7.1 Start Faculty Table Streaming Job
+```sql
+\i /opt/flink/sql/individual-jobs/setup-faculty-job.sql
+```
+
+#### 7.2 Start Student Fee Table Streaming Job  
+```sql
+\i /opt/flink/sql/individual-jobs/setup-student-fee-job.sql
+```
+
+#### 7.3 Monitor Running Jobs
+In Flink Web UI (http://localhost:8081), you should see:
+- Running Jobs section showing active streaming jobs
+- Each job processing messages from Kafka
+
+### Step 8: Verify Data Flow to MinIO
+
+#### 8.1 Check MinIO Storage
+1. Open MinIO Console: http://localhost:9001
+2. Navigate to `warehouse` bucket
+3. Look for Iceberg table files under paths like:
+   ```
+   warehouse/polariscatalog/university/faculty/
+   warehouse/polariscatalog/university/student_fee/
+   ```
+
+#### 8.2 Query Data with Trino
+```bash
+docker exec -it $(docker-compose ps -q trino) trino --server localhost:8080 --catalog iceberg --schema university
+```
+
+In Trino CLI:
+```sql
 SHOW TABLES;
-
--- Query users data
-SELECT * FROM users;
-
--- Query products data
-SELECT * FROM products;
-
--- Query orders data
-SELECT * FROM orders;
+SELECT COUNT(*) FROM faculty;
+SELECT COUNT(*) FROM student_fee;
+SELECT * FROM faculty LIMIT 5;
 ```
 
-## Testing CDC
+### Step 9: Test Real-time Changes
 
-### Insert New Data
-
-Connect to PostgreSQL:
-
+#### 9.1 Insert Test Data in PostgreSQL
 ```bash
-docker exec -it $(docker ps -q -f name=postgres) psql -U postgres -d sourcedb
+docker exec -it $(docker-compose ps -q postgres) psql -U postgres -d sourcedb
 ```
-
-Insert new records:
 
 ```sql
--- Insert new user
-INSERT INTO inventory.users (username, email, full_name) 
-VALUES ('alice_brown', 'alice@example.com', 'Alice Brown');
+-- Insert a new faculty
+INSERT INTO faculty (faculty_code, faculty_name) VALUES ('TEST', 'Test Faculty');
 
--- Update existing product
-UPDATE inventory.products 
-SET price = 899.99, stock_quantity = 45 
-WHERE id = 1;
-
--- Insert new order
-INSERT INTO inventory.orders (user_id, product_id, quantity, total_amount) 
-VALUES (4, 1, 1, 899.99);
+-- Update student fee
+UPDATE student_fee SET ukt_fee = 5000000 WHERE student_id = 'STD-2020-001';
 ```
 
-### Verify Changes in Iceberg
+#### 9.2 Verify Real-time Processing
+1. Check Kafka topic for new messages:
+```bash
+docker exec -it $(docker-compose ps -q kafka-broker) kafka-console-consumer.sh --bootstrap-server localhost:29092 --topic university-server.public.faculty --from-beginning --max-messages 1
+```
 
-Go back to Trino and query the tables to see the changes reflected:
+2. Check Flink job is processing (in Flink Web UI):
+   - Go to Running Jobs → Your job → Overview
+   - See "Records Received" increasing
 
+3. Query updated data in Trino:
 ```sql
--- Check latest users (should include Alice)
-SELECT * FROM iceberg.inventory.users ORDER BY id DESC;
-
--- Check product price update
-SELECT * FROM iceberg.inventory.products WHERE id = 1;
-
--- Check new order
-SELECT * FROM iceberg.inventory.orders ORDER BY id DESC;
+SELECT * FROM faculty WHERE faculty_code = 'TEST';
+SELECT * FROM student_fee WHERE student_id = 'STD-2020-001' ORDER BY ingestion_time DESC LIMIT 5;
 ```
 
-## Web Interfaces
+## Adding More Tables
 
-- **Flink Dashboard**: http://localhost:8081
-- **Kafka Connect REST API**: http://localhost:8083
-- **Trino Web UI**: http://localhost:8080
-- **MinIO Console**: http://localhost:9001 (admin/password)
-- **Polaris**: http://localhost:8181
+To add streaming for additional tables:
 
-## Monitoring
-
-### Check Kafka Topics
-
-List topics to see CDC topics created by Debezium:
-
+1. Create a new individual job file:
 ```bash
-docker exec kafka-broker kafka-topics.sh --bootstrap-server localhost:9092 --list
+cp flink-sql/individual-jobs/setup-faculty-job.sql flink-sql/individual-jobs/setup-[table-name]-job.sql
 ```
 
-### Check Debezium Connector Status
+2. Modify the new file to match your table schema
 
-```bash
-curl http://localhost:8083/connectors/postgres-connector/status | jq
-```
-
-### View Kafka Messages
-
-```bash
-docker exec kafka-broker kafka-console-consumer.sh \
-  --bootstrap-server localhost:9092 \
-  --topic postgres-server.inventory.users \
-  --from-beginning
-```
-
-## File Structure
-
-```
-├── docker-compose.yml              # Main orchestration
-├── flink/
-│   ├── Dockerfile                  # Flink with connectors
-│   └── conf/flink-conf.yaml        # Flink configuration
-├── trino/
-│   └── catalog/iceberg.properties  # Trino Iceberg catalog
-├── debezium/
-│   └── postgres-connector.json     # Debezium connector config
-├── init-scripts/
-│   └── init-postgres.sql           # PostgreSQL setup script
-├── flink-sql/
-│   └── setup-cdc-pipeline.sql      # Flink CDC pipeline
-└── README.md                       # This file
+3. Run the job in Flink SQL client:
+```sql
+\i /opt/flink/sql/individual-jobs/setup-[table-name]-job.sql
 ```
 
 ## Troubleshooting
 
-### PostgreSQL Connection Issues
+### Common Issues
 
-Check if PostgreSQL is ready:
-
+#### 1. Debezium Connector Not Starting
 ```bash
-docker logs $(docker ps -q -f name=postgres)
+# Check connector logs
+docker-compose logs debezium-connect
+
+# Delete and recreate connector
+curl -X DELETE http://localhost:8083/connectors/university-connector
+curl -X POST http://localhost:8083/connectors -H "Content-Type: application/json" --data-binary @debezium/university-connector.json
 ```
 
-### Debezium Connector Issues
+#### 2. Flink Cannot Connect to Polaris
+- Verify Polaris is running: `curl http://localhost:8181/healthcheck`
+- Check Flink logs: `docker-compose logs flink-jobmanager`
 
-Check connector logs:
+#### 3. No Data Appearing in MinIO
+- Verify Kafka topics have messages
+- Check Flink job status in Web UI
+- Ensure MinIO bucket exists and is accessible
+
+#### 4. Trino Cannot Query Tables
+- Verify Iceberg tables are created in Polaris catalog
+- Check Trino catalog configuration
+- Ensure S3 credentials are correct
+
+### Checking Logs
 
 ```bash
-docker logs $(docker ps -q -f name=debezium-connect)
+# View logs for specific service
+docker-compose logs -f [service-name]
+
+# Examples:
+docker-compose logs -f debezium-connect
+docker-compose logs -f flink-jobmanager
+docker-compose logs -f polaris
 ```
 
-### Flink Job Issues
-
-Check Flink logs:
+### Cleanup and Restart
 
 ```bash
-docker logs $(docker ps -q -f name=flink-jobmanager)
-docker logs $(docker ps -q -f name=flink-taskmanager)
-```
+# Stop all services
+docker-compose down
 
-### Clean Restart
-
-To completely reset the environment:
-
-```bash
+# Remove volumes (WARNING: This deletes all data)
 docker-compose down -v
+
+# Restart fresh
 docker-compose up -d
 ```
 
-## Advanced Configuration
+## Performance Tuning
 
-### Scaling Task Managers
+### Flink Configuration
+- Adjust parallelism in `flink/conf/flink-conf.yaml`
+- Increase memory for large datasets
+- Configure checkpointing for fault tolerance
 
-To scale Flink task managers:
+### Kafka Configuration  
+- Increase partitions for higher throughput
+- Adjust retention policies
+- Configure consumer group settings
+
+### MinIO Configuration
+- Use multiple drives for better performance
+- Configure appropriate bucket policies
+- Monitor storage usage
+
+## Monitoring
+
+### Key Metrics to Monitor
+
+1. **Kafka Lag**: Consumer group lag in Kafka
+2. **Flink Throughput**: Records processed per second
+3. **MinIO Storage**: Used storage space and I/O metrics  
+4. **Polaris Health**: Catalog service availability
+5. **Trino Query Performance**: Query execution times
+
+### Monitoring Commands
 
 ```bash
-docker-compose up -d --scale flink-taskmanager=3
+# Kafka consumer lag
+docker exec -it $(docker-compose ps -q kafka-broker) kafka-consumer-groups.sh --bootstrap-server localhost:29092 --describe --all-groups
+
+# Flink metrics
+curl -s http://localhost:8081/jobs | jq
+
+# MinIO metrics  
+curl -s http://localhost:9000/minio/health/live
 ```
 
-### Custom Kafka Topics
+## Security Considerations
 
-Modify the Debezium connector configuration in `debezium/postgres-connector.json` to customize topic names and behavior.
-
-### Different Source Tables
-
-1. Add tables to PostgreSQL schema
-2. Update `table.include.list` in Debezium connector
-3. Create corresponding Flink tables in the CDC pipeline script
+- Change default passwords in production
+- Configure proper network security
+- Enable SSL/TLS for external connections
+- Implement proper authentication for Polaris
+- Secure MinIO with proper access policies
 
 ## Next Steps
 
-- Add more tables to the CDC pipeline
-- Implement data transformations in Flink
-- Set up monitoring with Prometheus/Grafana
-- Add schema evolution handling
-- Implement compaction strategies for Iceberg tables 
+1. **Add Data Validation**: Implement schema validation in Flink
+2. **Error Handling**: Add dead letter queues for failed messages
+3. **Monitoring**: Set up Prometheus/Grafana for metrics
+4. **Backup Strategy**: Implement backup for MinIO data
+5. **CI/CD Pipeline**: Automate deployment of streaming jobs 

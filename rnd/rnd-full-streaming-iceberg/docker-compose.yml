@@ -48,11 +48,11 @@ services:
       - ./debezium/university-connector.json:/config/university-connector.json:ro
     entrypoint: ["/bin/sh","-c"]
     command: >
+      sh -c "
       until curl -sf http://debezium-connect:8083/; do echo 'waiting connect'; sleep 2; done;
-      curl -sf -X POST http://debezium-connect:8083/connectors \
-        -H 'Content-Type: application/json' \
-        --data-binary @/config/university-connector.json || true;
+      curl -sf -X POST http://debezium-connect:8083/connectors -H 'Content-Type: application/json' --data-binary @/config/university-connector.json || true;
       tail -f /dev/null
+      "
 
   kafka-broker:  
     image: apache/kafka:4.0.0  
@@ -112,10 +112,11 @@ services:
     build:  
       context: .  
       dockerfile: flink/Dockerfile  
-    command: [ "/opt/flink/entrypoint-with-setup.sh", "sql-client" ]  
+    command: [ "tail", "-f", "/dev/null" ]  
     networks:  
       - local-iceberg-lakehouse  
     depends_on:  
+      - flink-jobmanager
       - polaris  
       - minio  
     environment:  
@@ -208,7 +209,8 @@ services:
     networks:  
       - local-iceberg-lakehouse  
     volumes:  
-      - ./trino/catalog:/etc/trino/catalog  
+      - ./trino/catalog:/etc/trino/catalog
+      - ./trino/core-site.xml:/etc/trino/core-site.xml  
   
   minio:  
     image: minio/minio:latest  
