@@ -1,0 +1,33 @@
+{
+  "name": "university-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "tasks.max": "1",
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "postgres",
+    "database.password": "postgres",
+    "database.dbname": "sourcedb",
+    "database.server.name": "university-server",
+    "schema.include.list": "public",
+    "table.include.list": "public.faculty,public.program,public.lecturer,public.students,public.room,public.course,public.semester,public.class_schedule,public.registration,public.enrollment,public.grade,public.attendance,public.semester_fee,public.payment",
+    "plugin.name": "pgoutput",
+    "slot.name": "university_slot",
+    "publication.name": "university_publication",
+    "publication.autocreate.mode": "filtered",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    "value.converter.schemas.enable": "false",
+    "transforms": "unwrap",
+    "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+    "transforms.unwrap.drop.tombstones": "false",
+    "transforms.unwrap.delete.handling.mode": "rewrite",
+    "transforms.unwrap.add.fields": "op,ts_ms",
+    "topic.prefix": "university-server",
+    "heartbeat.interval.ms": "10000",
+    "snapshot.mode": "initial",
+    "skipped.operations": "none",
+    "include.schema.changes": "true"
+  }
+} 
