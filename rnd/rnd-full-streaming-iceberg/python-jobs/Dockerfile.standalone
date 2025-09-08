@@ -1,0 +1,25 @@
+FROM python:3.11-slim
+
+# Install docker CLI to execute commands in other containers
+RUN apt-get update && \
+    apt-get install -y docker.io curl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create app directory
+WORKDIR /app
+
+# Copy requirements and install dependencies
+COPY python-jobs/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy Python orchestrator
+COPY python-jobs/dynamic_cdc_orchestrator.py .
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV KAFKA_BOOTSTRAP_SERVERS=kafka-broker:29092
+ENV FLINK_SQL_CLIENT_CONTAINER=rnd-full-streaming-iceberg-flink-sql-client-1
+
+# Run the orchestrator
+CMD ["python", "dynamic_cdc_orchestrator.py"] 

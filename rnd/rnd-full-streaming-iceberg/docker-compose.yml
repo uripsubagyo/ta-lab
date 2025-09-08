@@ -88,6 +88,26 @@ services:
     depends_on:  
       - polaris  
       - minio  
+    environment:  
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        jobmanager.rpc.port: 6123
+        rest.address: 0.0.0.0
+        rest.port: 8081
+        rest.bind-address: 0.0.0.0
+        rest.bind-port: 8081
+        taskmanager.memory.process.size: 1728m
+        taskmanager.numberOfTaskSlots: 2
+        parallelism.default: 2
+        execution.checkpointing.interval: 10s
+        state.backend: rocksdb
+        state.checkpoints.dir: file:///tmp/flink-checkpoints
+        state.backend.incremental: true
+        execution.checkpointing.mode: EXACTLY_ONCE
+        execution.checkpointing.timeout: 10min
+        execution.checkpointing.min-pause: 5s
+        execution.checkpointing.max-concurrent-checkpoints: 1
+        execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
   
   flink-taskmanager:  
     build:  
@@ -97,6 +117,7 @@ services:
     networks:  
       - local-iceberg-lakehouse  
     depends_on:  
+      - flink-jobmanager
       - polaris  
       - minio  
     deploy:  
@@ -106,13 +127,41 @@ services:
       AWS_SECRET_ACCESS_KEY: password  
       AWS_REGION: dummy-region  
       S3_ENDPOINT: http://minio:9000  
-      S3_PATH_STYLE_ACCESS: "true"  
+      S3_PATH_STYLE_ACCESS: "true"
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        jobmanager.rpc.port: 6123
+        rest.address: 0.0.0.0
+        rest.port: 8081
+        rest.bind-address: 0.0.0.0
+        rest.bind-port: 8081
+        taskmanager.memory.process.size: 1728m
+        taskmanager.numberOfTaskSlots: 2
+        parallelism.default: 2
+        execution.checkpointing.interval: 10s
+        state.backend: rocksdb
+        state.checkpoints.dir: file:///tmp/flink-checkpoints
+        state.backend.incremental: true
+        execution.checkpointing.mode: EXACTLY_ONCE
+        execution.checkpointing.timeout: 10min
+        execution.checkpointing.min-pause: 5s
+        execution.checkpointing.max-concurrent-checkpoints: 1
+        execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
   
   flink-sql-client:  
     build:  
       context: .  
       dockerfile: flink/Dockerfile  
-    command: [ "tail", "-f", "/dev/null" ]  
+    command: >
+      /bin/bash -c "
+      echo 'Waiting for JobManager to be ready...' &&
+      until curl -s http://flink-jobmanager:8081/overview > /dev/null; do
+        echo 'JobManager is unavailable - sleeping' &&
+        sleep 2;
+      done &&
+      echo 'JobManager is up - starting SQL client' &&
+      tail -f /dev/null
+      "
     networks:  
       - local-iceberg-lakehouse  
     depends_on:  
@@ -124,7 +173,31 @@ services:
       AWS_SECRET_ACCESS_KEY: password  
       AWS_REGION: dummy-region  
       S3_ENDPOINT: http://minio:9000  
-      S3_PATH_STYLE_ACCESS: "true"  
+      S3_PATH_STYLE_ACCESS: "true"
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        jobmanager.rpc.port: 6123
+        rest.address: 0.0.0.0
+        rest.port: 8081
+        rest.bind-address: 0.0.0.0
+        rest.bind-port: 8081
+        taskmanager.memory.process.size: 1728m
+        taskmanager.numberOfTaskSlots: 2
+        parallelism.default: 2
+        execution.checkpointing.interval: 10s
+        state.backend: rocksdb
+        state.checkpoints.dir: file:///tmp/flink-checkpoints
+        state.backend.incremental: true
+        execution.checkpointing.mode: EXACTLY_ONCE
+        execution.checkpointing.timeout: 10min
+        execution.checkpointing.min-pause: 5s
+        execution.checkpointing.max-concurrent-checkpoints: 1
+        execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
+        sql-client.execution.result-mode: table
+        sql-client.execution.max-table-result.rows: 1000000
+    volumes:  
+      - ./flink-sql:/opt/flink/sql
+      - ./flink/conf/flink-conf.yaml:/opt/flink/conf/flink-conf.yaml
     stdin_open: true  
     tty: true
 
@@ -169,7 +242,30 @@ services:
       S3_ENDPOINT: http://minio:9000
       S3_PATH_STYLE_ACCESS: "true"
     profiles:
-      - python  
+      - python
+
+  # Dynamic CDC Orchestrator - monitors Kafka and triggers table-specific jobs
+  cdc-orchestrator:
+    build:
+      context: .
+      dockerfile: python-jobs/Dockerfile.standalone
+    command: ["python3", "/app/dynamic_cdc_orchestrator.py"]
+    networks:
+      - local-iceberg-lakehouse
+    depends_on:
+      kafka-broker:
+        condition: service_started
+      flink-sql-client:
+        condition: service_started
+      debezium-connect:
+        condition: service_started
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka-broker:29092
+      FLINK_SQL_CLIENT_CONTAINER: rnd-full-streaming-iceberg-flink-sql-client-1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    profiles:
+      - orchestrator  
   
   #####################################
   

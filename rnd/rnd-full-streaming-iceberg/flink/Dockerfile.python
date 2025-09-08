@@ -1,19 +1,21 @@
-FROM apache/flink:1.18-scala_2.12-java11
+FROM flink:1.20-java17
 
-# Install Python and pip
+# Install Python, pip, and JDK development headers
 RUN apt-get update && \
-    apt-get install -y python3 python3-pip python3-dev && \
+    apt-get install -y python3 python3-pip python3-dev openjdk-17-jdk-headless && \
     ln -s /usr/bin/python3 /usr/bin/python && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Download essential connectors that are known to work
-RUN wget -P /opt/flink/lib/ https://repo1.maven.org/maven2/org/apache/flink/flink-connector-kafka/3.1.0-1.18/flink-connector-kafka-3.1.0-1.18.jar && \
-    wget -P /opt/flink/lib/ https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-flink-runtime-1.17/1.4.2/iceberg-flink-runtime-1.17-1.4.2.jar && \
-    wget -P /opt/flink/lib/ https://repo1.maven.org/maven2/software/amazon/awssdk/bundle/2.20.18/bundle-2.20.18.jar
+# Download same connectors as main Flink containers (Flink 1.20 compatible)
+RUN cd /opt/flink/lib/ && \
+    curl -LO https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-flink-runtime-1.20/1.9.1/iceberg-flink-runtime-1.20-1.9.1.jar && \
+    curl -LO https://repo1.maven.org/maven2/org/apache/flink/flink-shaded-hadoop-2-uber/2.8.3-10.0/flink-shaded-hadoop-2-uber-2.8.3-10.0.jar && \
+    curl -LO https://repo1.maven.org/maven2/software/amazon/awssdk/bundle/2.31.9/bundle-2.31.9.jar && \
+    curl -LO https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/3.4.0-1.20/flink-sql-connector-kafka-3.4.0-1.20.jar
 
-# Download PyFlink
-RUN wget -P /opt/flink/lib/ https://repo1.maven.org/maven2/org/apache/flink/flink-python/1.18.0/flink-python-1.18.0.jar
+# Download PyFlink for Flink 1.20
+RUN curl -LO -P /opt/flink/lib/ https://repo1.maven.org/maven2/org/apache/flink/flink-python/1.20.2/flink-python-1.20.2.jar
 
 # Copy Flink configuration
 COPY flink/conf/ /opt/flink/conf/
@@ -23,6 +25,9 @@ COPY flink-sql/ /opt/flink/sql/
 
 # Copy Python jobs and requirements
 COPY python-jobs/ /opt/flink/python-jobs/
+
+# Set JAVA_HOME environment variable
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-arm64
 
 # Install Python dependencies
 RUN pip3 install -r /opt/flink/python-jobs/requirements.txt

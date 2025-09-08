@@ -1,82 +1,25 @@
-# Job Manager settings
-jobmanager.rpc.address: flink-jobmanager
-jobmanager.rpc.port: 6123
-jobmanager.memory.process.size: 2gb
-
-# Task Manager settings  
-taskmanager.memory.process.size: 6gb
-taskmanager.memory.jvm-overhead.min: 512mb
-taskmanager.memory.jvm-overhead.max: 1gb
-taskmanager.memory.framework.heap.size: 256mb
-taskmanager.memory.task.heap.size: 3gb
-taskmanager.memory.managed.size: 1gb
-taskmanager.memory.network.min: 256mb
-taskmanager.memory.network.max: 512mb
-taskmanager.numberOfTaskSlots: 4
-
-# Parallelism
-parallelism.default: 2
-
-# Rest settings
-rest.port: 8081
-rest.address: 0.0.0.0
-rest.bind-address: 0.0.0.0
-
-# SQL Gateway configuration (Critical for SQL execution)
-sql-gateway.enabled: true
-sql-gateway.endpoint.rest.address: 0.0.0.0
-sql-gateway.endpoint.rest.port: 8082
-sql-gateway.endpoint.rest.bind-address: 0.0.0.0
-sql-gateway.endpoint.rest.bind-port: 8082
-
-# High Availability (optional for production)
-high-availability: NONE
-
-# Checkpointing and state backend (RocksDB for production)
-state.backend: rocksdb
-state.backend.incremental: true
-state.backend.rocksdb.memory.managed: true
-state.backend.rocksdb.memory.fixed-per-slot: 256mb
-state.backend.rocksdb.block.cache-size: 128mb
-state.backend.rocksdb.writebuffer.size: 32mb
-state.backend.rocksdb.use-bloom-filter: true
-
-# Checkpoint configuration
-execution.checkpointing.interval: 30000
-execution.checkpointing.mode: EXACTLY_ONCE
-execution.checkpointing.min-pause: 1000
-execution.checkpointing.max-concurrent-checkpoints: 1
-execution.checkpointing.timeout: 300000
-state.checkpoints.dir: file:///opt/flink/checkpoints
-state.savepoints.dir: file:///opt/flink/savepoints
-
-# Restart strategy
-restart-strategy: exponential-delay
-restart-strategy.exponential-delay.initial-backoff: 2s
-restart-strategy.exponential-delay.max-backoff: 30s
-restart-strategy.exponential-delay.backoff-multiplier: 2.0
-restart-strategy.exponential-delay.reset-backoff-threshold: 60s
-restart-strategy.exponential-delay.jitter-factor: 0.1
-
-# Table/SQL configuration
-table.sql-dialect: default
-table.exec.source.idle-timeout: 10000
-table.exec.state.ttl: 3600000
-
-# Kafka-specific settings for better integration
-table.exec.mini-batch.enabled: true
-table.exec.mini-batch.allow-latency: 5s
-table.exec.mini-batch.size: 5000
-
-# Classloader configuration
-classloader.resolve-order: parent-first
-
-# Network and other ports
 blob.server.port: 6124
+jobmanager.rpc.address: flink-jobmanager
+execution.runtime-mode: streaming
 query.server.port: 6125
-
-# Metrics configuration for monitoring
-metrics.reporters: prometheus
-metrics.reporter.prometheus.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
-metrics.reporter.prometheus.port: 9249
-metrics.reporter.prometheus.host: 0.0.0.0 
+rest.bind-port: 8081
+parallelism.default: 2
+taskmanager.numberOfTaskSlots: 2
+sql-client.execution.result-mode: table
+taskmanager.memory.process.size: 1728m
+execution.checkpointing.mode: EXACTLY_ONCE
+sql-client.execution.max-table-result.rows: 1000000
+state.backend.incremental: true
+jobmanager.memory.process.size: 1600m
+jobmanager.rpc.port: 6123
+rest.bind-address: 0.0.0.0
+execution.checkpointing.interval: 10s
+execution.checkpointing.timeout: 10min
+rest.port: 8081
+execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
+pipeline.jars: /opt/flink/lib/iceberg-flink-runtime-1.20-1.9.1.jar
+rest.address: 0.0.0.0
+state.backend: rocksdb
+execution.checkpointing.min-pause: 5s
+execution.checkpointing.max-concurrent-checkpoints: 1
+state.checkpoints.dir: file:///tmp/flink-checkpoints

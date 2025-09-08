@@ -1,0 +1,37 @@
+# SQL Client Configuration
+execution:
+  planner: blink
+  type: streaming
+  result-mode: table
+  max-table-result-rows: 1000000
+
+deployment:
+  target: remote
+  response-timeout: 5000
+
+configuration:
+  execution.checkpointing.interval: 10s
+  execution.checkpointing.mode: EXACTLY_ONCE
+  execution.checkpointing.timeout: 10min
+  execution.checkpointing.min-pause: 5s
+  execution.checkpointing.max-concurrent-checkpoints: 1
+  execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
+  state.backend: rocksdb
+  state.checkpoints.dir: file:///tmp/flink-checkpoints
+  state.backend.incremental: true
+  taskmanager.memory.process.size: 4096m
+  taskmanager.numberOfTaskSlots: 8
+  parallelism.default: 1
+
+catalogs:
+  - name: iceberg_catalog
+    type: iceberg
+    catalog-type: rest
+    uri: http://polaris:8181/api/catalog/
+    warehouse: polariscatalog
+    credential: root:secret
+    scope: PRINCIPAL_ROLE:ALL
+    s3.endpoint: http://minio:9000
+    s3.region: dummy-region
+    s3.access-key-id: admin
+    s3.secret-access-key: password 
