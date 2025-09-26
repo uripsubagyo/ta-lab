@@ -1,0 +1,6 @@
+kafka:
+  clusters:
+    - name: local
+      bootstrapServers: kafka-broker:29092
+auth:
+  type: disabled
